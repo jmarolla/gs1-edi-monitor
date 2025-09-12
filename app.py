@@ -200,7 +200,11 @@ with m3: st.metric('Filas en página', len(df))
 with m4: st.metric('Plataforma', plataforma_sel)
 
 # ================== Semáforo (ROJO y VERDE) ==================
-critical_pattern = r'(Error al dar de alta la empresa|No existe la empresa, no se creo el usuario)'
+critical_pattern = r'(Error al dar de alta la empresa|No existe la empresa, no se creo el usuario|Campo(s) requerido(s): email  {"idusuario":null,"error":true,"message":"Campo(s) requerido(s): email"}
+|No existe la empresa, no se creo el usuario.  {"idusuario":null,"error":true,"message":"No existe la empresa, no se creo el usuario."}
+|No existe el usuario, no se creo el usuario.  {"idusuario":null,"error":true,"message":"No existe el usuario, no se creo el usuario."}
+|No existe la empresa, no se creo el usuario.  {"idusuario":null,"error":true,"message":"No existe la empresa, no se creo el usuario."}
+)'
 crit_mask = df['MotivoRechazo'].astype(str).str.contains(critical_pattern, case=False, na=False)
 crit_count = int(crit_mask.sum())
 ok_count = int(len(df) - crit_count)
