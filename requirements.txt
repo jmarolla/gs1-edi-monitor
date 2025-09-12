@@ -1,3 +1,4 @@
 streamlit
 pandas
-pyodbc
+sqlalchemy
+python-tds
