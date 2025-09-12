@@ -56,7 +56,7 @@ def yesno(val, default_yes=True):
 @st.cache_resource(show_spinner=False)
 def get_engine_from_values(server, database, user, password, encrypt="yes", trust="yes"):
     """
-    Crea un engine SQLAlchemy usando el dialecto mssql+pytds (no requiere ODBC).
+    Crea un engine SQLAlchemy usando mssql+pytds (no requiere ODBC).
     Soporta TLS con encrypt/trustservercertificate.
     """
     url = (
@@ -73,7 +73,7 @@ def secrets_available():
     return all(k in st.secrets for k in ("DB_SERVER","DB_NAME","DB_USER","DB_PASS"))
 
 # ==============================================
-# Login / Conexión
+# Login / Conexión (Cloud con secrets o Local con formulario)
 # ==============================================
 engine = None
 
@@ -92,7 +92,7 @@ if secrets_available():
         st.error(f"No se pudo conectar con las credenciales de la nube: {e}")
         st.stop()
 else:
-    # Local: mostrar login (sin botón ojo)
+    # Local: login con formulario y ocultar el "ojo" del password
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
 
@@ -121,7 +121,6 @@ else:
         st.info('Conéctate en la barra lateral para comenzar.')
         st.stop()
     else:
-        # Ocultar la sidebar tras login local
         if st.session_state.get('authenticated'):
             st.markdown(HIDE_SIDEBAR_CSS, unsafe_allow_html=True)
 
@@ -170,18 +169,29 @@ SQL_PAGE = """
 page = st.session_state.page
 offset = max((page-1)*page_size, 0)
 
+# ----- COUNT -----
 with st.spinner('Calculando total…'):
     with engine.begin() as conn:
-        total = conn.execute(text(SQL_COUNT), {"start": start_date, "end": end_date, "plat": plat_param}).scalar() or 0
+        total = conn.execute(
+            text(SQL_COUNT),
+            {"start": start_date, "end": end_date, "plat": plat_param}
+        ).scalar() or 0
 
+# ----- PAGE -----
 with st.spinner('Cargando página de datos…'):
     with engine.begin() as conn:
-        rows = conn.execute(
+        result = conn.execute(
             text(SQL_PAGE),
             {"start": start_date, "end": end_date, "plat": plat_param, "off": offset, "psz": page_size}
-        ).fetchall()
-        cols = rows[0].keys() if rows else ["Id","FechaAlta","Plataforma","Metodo","MotivoRechazo","IdEmpresa","CodEmpre","RazonSocial","CUIT"]
-        df = pd.DataFrame(rows, columns=cols)
+        )
+        rows = result.fetchall()
+        cols = list(result.keys())
+        if rows:
+            df = pd.DataFrame(rows, columns=cols)
+        else:
+            df = pd.DataFrame(columns=cols or [
+                "Id","FechaAlta","Plataforma","Metodo","MotivoRechazo","IdEmpresa","CodEmpre","RazonSocial","CUIT"
+            ])
 
 m1, m2, m3, m4 = st.columns(4)
 with m1: st.metric('Total últimos 30 días', total)
@@ -255,6 +265,7 @@ with nav4:
 
 # ================== Tabla ==================
 if not display_df.empty:
+    # Renombrar "MotivoRechazo" → "Respuestas" para la UI
     display_df = display_df.rename(columns={"MotivoRechazo": "Respuestas"})
     display_df['FechaAlta'] = pd.to_datetime(display_df['FechaAlta'], errors='coerce')
 
@@ -289,7 +300,8 @@ if not display_df.empty:
     xml_text = ''
     try:
         with engine.begin() as conn:
-            row = conn.execute(text(SQL_XML), {"id": int(job_id)}).fetchone()
+            result = conn.execute(text(SQL_XML), {"id": int(job_id)})
+            row = result.fetchone()
             if row and row[0]:
                 xml_text = str(row[0])
     except Exception as e:
