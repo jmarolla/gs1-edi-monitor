@@ -200,10 +200,22 @@ with m3: st.metric('Filas en página', len(df))
 with m4: st.metric('Plataforma', plataforma_sel)
 
 # ================== Semáforo (ROJO y VERDE) ==================
-critical_pattern = r'(Error al dar de alta la empresa|No existe la empresa, no se creo el usuario)'
+# CRÍTICOS (ROJO): detecta cualquiera de estos textos (con o sin JSON anexo)
+# - "Error al dar de alta la empresa"
+# - "Error en el alta de la empresa. - Invalid argument supplied for foreach()"
+# - "No existe la empresa, no se creo el usuario"
+# - "No existe el usuario, no se creo el usuario"
+critical_pattern = r'(' \
+                   r'Error al dar de alta la empresa' \
+                   r'|Error en el alta de la empresa\.\s*-\s*Invalid argument supplied for foreach\(\)' \
+                   r'|No existe la empresa, no se creo el usuario' \
+                   r'|No existe el usuario, no se creo el usuario' \
+                   r')'
+
 crit_mask = df['MotivoRechazo'].astype(str).str.contains(critical_pattern, case=False, na=False)
 crit_count = int(crit_mask.sum())
-ok_count = int(len(df) - crit_count)
+ok_count  = int(len(df) - crit_count)
+
 
 c1, c2 = st.columns(2)
 with c1:
