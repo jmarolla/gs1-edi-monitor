@@ -138,10 +138,10 @@ with ctrl_mid:
     plat_default = plataformas.index('EDI') if 'EDI' in plataformas else 0
     plataforma_sel = st.selectbox('Plataforma (server-side)', plataformas, index=plat_default)
 with ctrl_right:
-    st.caption('Filtrando por defecto últimos 15 días (server-side).')
+    st.caption('Filtrando por defecto últimos 30 días (server-side).')
 
 end_date = datetime.now().date() + timedelta(days=1)   # exclusivo
-start_date = (datetime.now().date() - timedelta(days=15))
+start_date = (datetime.now().date() - timedelta(days=30))
 plat_param = None if plataforma_sel == '(todas)' else plataforma_sel
 
 # ==============================================
