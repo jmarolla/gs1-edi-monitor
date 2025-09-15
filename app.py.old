@@ -10,18 +10,15 @@ from datetime import datetime, timedelta
 # ==============================================
 st.set_page_config(page_title='Publicación GS1 → EDI', layout='wide')
 
-# ===== Título centrado =====
+# Título centrado
 st.markdown(
     """
-    <div style="display:flex;align-items:center;justify-content:center;margin:8px 0 12px 0;">
-      <span style="font-size:36px;font-weight:800;">Publicación GS1 → EDI</span>
+    <div style="display:flex;align-items:center;justify-content:center;margin:4px 0 12px 0;">
+      <span style="font-size:40px;font-weight:700;">Publicación GS1 → EDI</span>
     </div>
     """,
     unsafe_allow_html=True
 )
-
-# --- Reservamos un contenedor para el semáforo (se llena más abajo) ---
-sem_container = st.container()
 
 # ===== CSS helpers =====
 HIDE_SIDEBAR_CSS = """
@@ -59,14 +56,15 @@ def yesno(val, default_yes=True):
 @st.cache_resource(show_spinner=False)
 def get_engine_from_values(server, database, user, password, encrypt="yes", trust="yes"):
     """
-    Engine SQLAlchemy mssql+pytds (sin ODBC), con TLS (encrypt/trustservercertificate).
+    Crea un engine SQLAlchemy usando mssql+pytds (no requiere ODBC).
+    Soporta TLS con encrypt/trustservercertificate.
     """
     url = (
         f"mssql+pytds://{user}:{password}@{server}:1433/{database}"
         f"?encrypt={yesno(encrypt)}&trustservercertificate={yesno(trust)}&autocommit=True"
     )
     engine = create_engine(url, pool_pre_ping=True, pool_recycle=180)
-    # Sanity check
+    # Probar conexión rápida
     with engine.begin() as conn:
         conn.execute(text("SELECT 1"))
     return engine
@@ -80,7 +78,7 @@ def secrets_available():
 engine = None
 
 if secrets_available():
-    # Cloud: toma secrets y oculta sidebar
+    # Cloud: tomar credenciales de st.secrets y ocultar sidebar
     server = st.secrets["DB_SERVER"]
     database = st.secrets["DB_NAME"]
     user = st.secrets["DB_USER"]
@@ -94,7 +92,7 @@ if secrets_available():
         st.error(f"No se pudo conectar con las credenciales de la nube: {e}")
         st.stop()
 else:
-    # Local: login con formulario (sin botón ojo) y ocultar luego
+    # Local: login con formulario y ocultar el "ojo" del password
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
 
@@ -127,25 +125,21 @@ else:
             st.markdown(HIDE_SIDEBAR_CSS, unsafe_allow_html=True)
 
 # ==============================================
-# Filtros (van *debajo* del semáforo en la UI, pero se definen aquí)
+# Parámetros de UI / filtros
 # ==============================================
 if 'page' not in st.session_state:
     st.session_state.page = 1
 
-filters_container = st.container()  # contenedor para ubicar filtros luego del semáforo
+ctrl_left, ctrl_mid, ctrl_right = st.columns([1,1,2])
+with ctrl_left:
+    page_size = st.selectbox('Filas por página', [50,100,200,500], index=3)  # 500 por defecto
+with ctrl_mid:
+    plataformas = ['(todas)','EDI','AltaEmpresa','BajaEmpresa','AltaUsuario']
+    plat_default = plataformas.index('EDI') if 'EDI' in plataformas else 0
+    plataforma_sel = st.selectbox('Plataforma (server-side)', plataformas, index=plat_default)
+with ctrl_right:
+    st.caption('Filtrando por defecto últimos 30 días (server-side).')
 
-with filters_container:
-    ctrl_left, ctrl_mid, ctrl_right = st.columns([1,1,2])
-    with ctrl_left:
-        page_size = st.selectbox('Filas por página', [50,100,200,500], index=3)  # 500 por defecto
-    with ctrl_mid:
-        plataformas = ['(todas)','EDI','AltaEmpresa','BajaEmpresa','AltaUsuario']
-        plat_default = plataformas.index('EDI') if 'EDI' in plataformas else 0
-        plataforma_sel = st.selectbox('Plataforma (server-side)', plataformas, index=plat_default)
-    with ctrl_right:
-        st.caption('Filtrando por defecto últimos 30 días (server-side).')
-
-# Ventana temporal y parámetros
 end_date = datetime.now().date() + timedelta(days=1)   # exclusivo
 start_date = (datetime.now().date() - timedelta(days=30))
 plat_param = None if plataforma_sel == '(todas)' else plataforma_sel
@@ -199,10 +193,18 @@ with st.spinner('Cargando página de datos…'):
                 "Id","FechaAlta","Plataforma","Metodo","MotivoRechazo","IdEmpresa","CodEmpre","RazonSocial","CUIT"
             ])
 
-# ==============================================
-# Semáforo (se imprime ARRIBA del bloque de filtros)
-# ==============================================
-# Reglas de críticos (ROJO)
+m1, m2, m3, m4 = st.columns(4)
+with m1: st.metric('Total últimos 30 días', total)
+with m2: st.metric('Página', page)
+with m3: st.metric('Filas en página', len(df))
+with m4: st.metric('Plataforma', plataforma_sel)
+
+# ================== Semáforo (ROJO y VERDE) ==================
+# CRÍTICOS (ROJO): detecta cualquiera de estos textos (con o sin JSON anexo)
+# - "Error al dar de alta la empresa"
+# - "Error en el alta de la empresa. - Invalid argument supplied for foreach()"
+# - "No existe la empresa, no se creo el usuario"
+# - "No existe el usuario, no se creo el usuario"
 critical_pattern = r'(' \
                    r'Error al dar de alta la empresa' \
                    r'|Error en el alta de la empresa\.\s*-\s*Invalid argument supplied for foreach\(\)' \
@@ -212,48 +214,39 @@ critical_pattern = r'(' \
 
 crit_mask = df['MotivoRechazo'].astype(str).str.contains(critical_pattern, case=False, na=False)
 crit_count = int(crit_mask.sum())
-ok_count   = int(len(df) - crit_count)
+ok_count  = int(len(df) - crit_count)
 
-with sem_container:
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(
-            f"""
-            <div style="
-                padding:20px;border-radius:16px;background:#ff4d4f;
-                color:white;font-weight:900;font-size:28px;text-align:center;
-                box-shadow:0 8px 20px rgba(255,77,79,0.45); margin-bottom:14px;">
-                🔴 ERROR: {crit_count}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    with c2:
-        st.markdown(
-            f"""
-            <div style="
-                padding:20px;border-radius:16px;background:#06c1671a;
-                color:#0e7a3f;font-weight:900;font-size:28px;text-align:center;border:3px solid #23c16b;
-                box-shadow:0 8px 20px rgba(35,193,107,0.35); margin-bottom:14px;">
-                🟢 OK: {ok_count}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
 
-# ==============================================
-# Métricas y toggles
-# ==============================================
-m1, m2, m3, m4 = st.columns(4)
-with m1: st.metric('Total últimos 30 días', total)
-with m2: st.metric('Página', page)
-with m3: st.metric('Filas en página', len(df))
-with m4: st.metric('Plataforma', plataforma_sel)
+c1, c2 = st.columns(2)
+with c1:
+    st.markdown(
+        f"""
+        <div style="
+            padding:16px;border-radius:14px;background:#ff4d4f;
+            color:white;font-weight:800;font-size:22px;text-align:center;
+            box-shadow:0 6px 18px rgba(255,77,79,0.35);">
+            🔴 ERROR: {crit_count}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+with c2:
+    st.markdown(
+        f"""
+        <div style="
+            padding:16px;border-radius:14px;background:#06c1671a;
+            color:#0e7a3f;font-weight:900;font-size:22px;text-align:center;border:2px solid #23c16b;
+            box-shadow:0 6px 18px rgba(35,193,107,0.25);">
+            🟢 OK: {ok_count}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-f1, f2 = st.columns(2)
-with f1:
+filter_col1, filter_col2 = st.columns(2)
+with filter_col1:
     show_only_crit = st.checkbox("Ver SOLO errores críticos (rojo)", value=False)
-with f2:
+with filter_col2:
     show_only_ok = st.checkbox("Ver SOLO OK (verde)", value=False)
 
 if show_only_crit and show_only_ok:
@@ -265,9 +258,7 @@ elif show_only_ok:
 else:
     display_df = df
 
-# ==============================================
-# Navegación
-# ==============================================
+# ================== Navegación ==================
 nav1, nav2, nav3, nav4 = st.columns([1,1,3,3])
 with nav1:
     if st.button('⬅️ Anterior', disabled=(page<=1)):
@@ -284,10 +275,9 @@ with nav4:
         st.session_state.page = int(goto)
         st.rerun()
 
-# ==============================================
-# Tabla
-# ==============================================
+# ================== Tabla ==================
 if not display_df.empty:
+    # Renombrar "MotivoRechazo" → "Respuestas" para la UI
     display_df = display_df.rename(columns={"MotivoRechazo": "Respuestas"})
     display_df['FechaAlta'] = pd.to_datetime(display_df['FechaAlta'], errors='coerce')
 
@@ -308,9 +298,7 @@ else:
 
 st.markdown('---')
 
-# ==============================================
-# Detalle: XML por selección
-# ==============================================
+# ================== Detalle: XML por selección ==================
 if not display_df.empty:
     left, right = st.columns([1,2])
     with left:
