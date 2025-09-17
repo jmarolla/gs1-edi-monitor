@@ -11,15 +11,128 @@ from datetime import datetime, timedelta
 # ==============================================
 st.set_page_config(page_title='Publicación GS1 → EDI', layout='wide')
 
-# ===== Título centrado =====
-st.markdown(
-    """
-    <div style="display:flex;align-items:center;justify-content:center;margin:8px 0 12px 0;">
-      <span style="font-size:36px;font-weight:800;">Publicación GS1 → EDI</span>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# ===== CSS GS1 (colores corporativos) + fixes modo oscuro =====
+GS1_STYLE = """
+<style>
+:root { color-scheme: light dark; }
+
+/* ----- Base (claro) ----- */
+body { background-color: #f5f5f5; color: #003366; }
+
+h1, h2, h3, h4, h5, h6 { color: #003366 !important; }
+
+[data-testid="stMetric"] {
+  background: #ffffff;
+  border: 2px solid #003366;
+  border-radius: 16px;
+  padding: 12px;
+  color: #003366;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+button[kind="primary"], .stButton > button[kind="primary"] {
+  background-color: #FF6600 !important;
+  color: #ffffff !important;
+  border-radius: 12px !important;
+  border: none !important;
+  font-weight: 700 !important;
+}
+
+button[kind="secondary"], .stButton > button[kind="secondary"] {
+  background-color: #003366 !important;
+  color: #ffffff !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+}
+
+/* Inputs en claro */
+.stSelectbox div[role="combobox"],
+.stNumberInput input,
+.stTextInput input,
+.stDateInput input {
+  background: #ffffff !important;
+  color: #003366 !important;
+  border: 1px solid #003366 !important;
+  border-radius: 10px !important;
+}
+
+/* Tabla */
+.stDataFrame thead tr th { background-color: #003366 !important; color: #ffffff !important; font-weight: 700; }
+.stDataFrame tbody tr td { border-bottom: 1px solid #ddd !important; }
+
+hr { border: 1px solid #003366; }
+
+/* ----- Login sidebar ----- */
+section[data-testid="stSidebar"] > div:first-child {
+  background-color: #003366 !important;
+  color: #ffffff !important;
+  border-radius: 0 12px 12px 0;
+  padding: 20px;
+}
+section[data-testid="stSidebar"] label { color: #ffffff !important; font-weight: 600; }
+section[data-testid="stSidebar"] input { border-radius: 8px; border: 1px solid #FF6600; }
+section[data-testid="stSidebar"] button[kind="primary"] { background-color: #FF6600 !important; color: #ffffff !important; font-weight: 700 !important; }
+
+/* ----- Modo oscuro (prefiere) ----- */
+@media (prefers-color-scheme: dark) {
+  body { background-color: #0b1220; color: #e2e8f0; }
+  h1, h2, h3, h4, h5, h6 { color: #e2e8f0 !important; }
+
+  /* Controles de filtro: texto visible sobre fondo oscuro */
+  .stSelectbox div[role="combobox"],
+  .stNumberInput input,
+  .stTextInput input,
+  .stDateInput input {
+    background: #0f172a !important;      /* slate-900 */
+    color: #e2e8f0 !important;            /* slate-200 */
+    border: 1px solid #334155 !important; /* slate-600 */
+  }
+  .stNumberInput input::placeholder,
+  .stTextInput input::placeholder { color: #94a3b8 !important; } /* slate-400 */
+
+  /* Dropdown del select */
+  div[data-baseweb="popover"] [role="listbox"] {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #334155 !important;
+  }
+  div[data-baseweb="popover"] [role="option"] { color: #e2e8f0 !important; }
+
+  /* Captions y labels */
+  .stCaption, .stMarkdown p, label, .stCheckbox label { color: #e2e8f0 !important; }
+
+  /* Métricas acorde al dark */
+  [data-testid="stMetric"] { border-color: #1e293b; color: #e2e8f0; background:#0b1220; }
+}
+</style>
+"""
+st.markdown(GS1_STYLE, unsafe_allow_html=True)
+
+# ===== Header con logo + título centrado =====
+# Para mostrar el logo:
+# - En Streamlit Cloud (secrets): LOGO_URL="https://ruta/tu_logo.png"
+# - En local (var de entorno):   GS1_LOGO_URL="https://ruta/tu_logo.png"
+LOGO_URL = st.secrets.get("LOGO_URL", os.environ.get("GS1_LOGO_URL", ""))
+if LOGO_URL:
+    st.markdown(
+        f"""
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;margin:10px 0 6px 0;gap:10px;">
+          <img src="{LOGO_URL}" alt="GS1" style="max-height:64px;object-fit:contain;"/>
+          <span style="font-size:36px;font-weight:800;color:#003366;">Publicación GS1 → EDI</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        """
+        <div style="display:flex;align-items:center;justify-content:center;margin:8px 0 12px 0;">
+          <span style="font-size:36px;font-weight:800;color:#003366;">Publicación GS1 → EDI</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # --- Contenedor para el semáforo (se llena más abajo) ---
 sem_container = st.container()
@@ -205,7 +318,7 @@ with st.spinner('Cargando página de datos…'):
 # ==============================================
 critical_pattern = r'(' \
                    r'Error al dar de alta la empresa' \
-                   r'|Error en el alta de la empresa\.\s*-\s*Invalid argument supplied for foreach\(\)' \
+                   r'|Error en el alta de la empresa.\s*-\s*Invalid argument supplied for foreach\(\)' \
                    r'|No existe la empresa, no se creo el usuario' \
                    r'|No existe el usuario, no se creo el usuario' \
                    r')'
