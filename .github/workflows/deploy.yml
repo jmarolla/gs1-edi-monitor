@@ -2,7 +2,7 @@ name: Deploy to EC2 (monitoredi)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -31,36 +31,37 @@ jobs:
             APP_DIR="/opt/gs1-edi/app"
             SERVICE="gs1-edi"
 
-            # Prerrequisitos
+            # Paquetes
             sudo apt-get update -y
             sudo apt-get install -y git python3-venv python3-pip rsync curl
 
-            # Estructura y permisos
+            # Estructura
             id "$APP_USER" >/dev/null 2>&1 || sudo adduser --system --group --home /opt/gs1-edi "$APP_USER"
             sudo mkdir -p "$APP_DIR" "$REPO_DIR"
             sudo chown -R "$APP_USER:$APP_USER" /opt/gs1-edi
 
-            # Clonar/actualizar (staging)
+            # Repo (staging)
             if [ -d "$REPO_DIR/.git" ]; then
               sudo -u "$APP_USER" -H bash -lc "cd $REPO_DIR && git fetch --all --prune && git reset --hard origin/HEAD"
             else
               sudo -u "$APP_USER" -H bash -lc "git clone --depth=1 \"$REPO_URL\" \"$REPO_DIR\""
             fi
 
-            # Sincronizar a la app (sin .git ni venv)
+            # Sync a la app
             sudo rsync -a --delete \
-              --exclude '.git/' --exclude '.gitignore' --exclude '__pycache__/' \
-              --exclude '.venv/' --exclude 'venv/' --exclude 'env/' \
+              --exclude ".git/" --exclude ".gitignore" --exclude "__pycache__/" \
+              --exclude ".venv/" --exclude "venv/" --exclude "env/" \
               "$REPO_DIR/" "$APP_DIR/"
+
             sudo chown -R "$APP_USER:$APP_USER" /opt/gs1-edi
 
-            # .streamlit/config.toml si vino en raíz (no toca secrets)
+            # .streamlit/config.toml si vino en raíz
             sudo -u "$APP_USER" -H bash -lc "mkdir -p $APP_DIR/.streamlit"
             if [ -f "$APP_DIR/config.toml" ]; then
               sudo -u "$APP_USER" -H bash -lc "mv -f $APP_DIR/config.toml $APP_DIR/.streamlit/config.toml"
             fi
 
-            # Virtualenv + deps
+            # venv + deps
             sudo -u "$APP_USER" -H bash -lc "
               cd $APP_DIR
               [ -d .venv ] || python3 -m venv .venv
@@ -69,9 +70,9 @@ jobs:
               pip install -r requirements.txt
             "
 
-            # Crear servicio si no existe (heredoc correctamente citado)
-            if [ ! -f /etc/systemd/system/$SERVICE.service ]; then
-              sudo tee /etc/systemd/system/$SERVICE.service >/dev/null <<'UNIT'
+            # systemd (crear solo si falta)
+            if [ ! -f "/etc/systemd/system/${SERVICE}.service" ]; then
+              sudo tee "/etc/systemd/system/${SERVICE}.service" >/dev/null <<'UNIT'
 [Unit]
 Description=GS1 EDI Streamlit App
 After=network-online.target
