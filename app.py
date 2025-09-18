@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ==============================================
 # Config general
 # ==============================================
-st.set_page_config(page_title='Publicación GS1 → EDI', layout='wide')
+st.set_page_config(page_title='Publicación GS1 → EDI- 2025', layout='wide')
 
 # ===== CSS GS1 (colores corporativos) + fixes modo oscuro =====
 GS1_STYLE = """
