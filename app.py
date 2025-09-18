@@ -119,7 +119,7 @@ if LOGO_URL:
         f"""
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;margin:10px 0 6px 0;gap:10px;">
           <img src="{LOGO_URL}" alt="GS1" style="max-height:64px;object-fit:contain;"/>
-          <span style="font-size:36px;font-weight:800;color:#003366;">Publicación GS1 → EDI</span>
+          <span style="font-size:36px;font-weight:800;color:#003366;">Publicación GS1 → EDI 2025</span>
         </div>
         """,
         unsafe_allow_html=True
@@ -128,7 +128,7 @@ else:
     st.markdown(
         """
         <div style="display:flex;align-items:center;justify-content:center;margin:8px 0 12px 0;">
-          <span style="font-size:36px;font-weight:800;color:#003366;">Publicación GS1 → EDI</span>
+          <span style="font-size:36px;font-weight:800;color:#003366;">Publicación GS1 → EDI 2025</span>
         </div>
         """,
         unsafe_allow_html=True
