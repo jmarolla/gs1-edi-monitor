@@ -1,0 +1,106 @@
+name: Deploy to EC2 (monitoredi)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (metadata only)
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Add EC2 to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${{ secrets.EC2_PORT || 22 }}" "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          PORT: ${{ secrets.EC2_PORT || 22 }}
+          USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -p "$PORT" "$USER@$HOST" 'bash -s' << "EOSSH"
+          set -euo pipefail
+
+          APP_USER="gs1edi"
+          REPO_URL="https://github.com/jmarolla/gs1-edi-monitor.git"
+          REPO_DIR="/opt/gs1-edi/repo"
+          APP_DIR="/opt/gs1-edi/app"
+          SERVICE="gs1-edi"
+
+          # 0) Prerrequisitos mínimos (idempotente)
+          sudo apt-get update -y
+          sudo apt-get install -y git python3-venv python3-pip rsync
+
+          # 1) Preparar estructura y permisos
+          id "$APP_USER" >/dev/null 2>&1 || sudo adduser --system --group --home /opt/gs1-edi "$APP_USER"
+          sudo mkdir -p "$APP_DIR" "$REPO_DIR"
+          sudo chown -R "$APP_USER:$APP_USER" /opt/gs1-edi
+
+          # 2) Clonar/actualizar repo (staging)
+          if [ -d "$REPO_DIR/.git" ]; then
+            sudo -u "$APP_USER" -H bash -lc "cd $REPO_DIR && git fetch --all --prune && git reset --hard origin/HEAD"
+          else
+            sudo -u "$APP_USER" -H bash -lc "git clone --depth=1 \"$REPO_URL\" \"$REPO_DIR\""
+          fi
+
+          # 3) Sincronizar a la carpeta de la app (sin .git ni venv)
+          sudo rsync -a --delete \
+            --exclude '.git/' --exclude '.gitignore' --exclude '__pycache__/' \
+            --exclude '.venv/' --exclude 'venv/' --exclude 'env/' \
+            "$REPO_DIR/" "$APP_DIR/"
+
+          sudo chown -R "$APP_USER:$APP_USER" /opt/gs1-edi
+
+          # 4) Mover config.toml (si vino) y mantener secrets existentes
+          sudo -u "$APP_USER" -H bash -lc "mkdir -p $APP_DIR/.streamlit"
+          if [ -f "$APP_DIR/config.toml" ]; then
+            sudo -u "$APP_USER" -H bash -lc "mv -f $APP_DIR/config.toml $APP_DIR/.streamlit/config.toml"
+          fi
+
+          # 5) Virtualenv + deps
+          sudo -u "$APP_USER" -H bash -lc "
+            cd $APP_DIR
+            [ -d .venv ] || python3 -m venv .venv
+            source .venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+          "
+
+          # 6) Crear/asegurar servicio systemd (si no existe)
+          if [ ! -f /etc/systemd/system/$SERVICE.service ]; then
+            sudo tee /etc/systemd/system/$SERVICE.service >/dev/null <<EOF
+[Unit]
+Description=GS1 EDI Streamlit App
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=$APP_USER
+Group=$APP_USER
+WorkingDirectory=$APP_DIR
+Environment=PATH=$APP_DIR/.venv/bin
+ExecStart=$APP_DIR/.venv/bin/streamlit run app.py --server.port=8501 --server.address=127.0.0.1 --server.enableCORS=true --server.enableXsrfProtection=true
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+[Install]
+WantedBy=multi-user.target
+EOF
+            sudo systemctl daemon-reload
+            sudo systemctl enable $SERVICE
+          fi
+
+          # 7) Reiniciar la app y verificar
+          sudo systemctl restart "$SERVICE"
+          sudo systemctl is-active "$SERVICE" >/dev/null
+          EOSSH
