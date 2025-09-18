@@ -2,6 +2,19 @@ import os
 import re
 import streamlit as st
 import pandas as pd
+def safe_secret(key: str, default: str = ""):
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+FAVICON_URL = safe_secret("LOGO_URL", os.environ.get("GS1_LOGO_URL", ""))
+
+st.set_page_config(
+    page_title="Publicación GS1 → EDI",
+    page_icon=FAVICON_URL if FAVICON_URL else "🧩",  # usa tu LOGO_URL; si falta, emoji
+    layout="wide",
+)
 from sqlalchemy import create_engine, text
 from xml.dom import minidom
 from datetime import datetime, timedelta
